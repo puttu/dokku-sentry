@@ -1,75 +1,64 @@
-# This file is just Python, with a touch of Django which means
-# you can inherit and tweak settings to your hearts content.
+"""
 
-# For Docker, the following environment variables are supported:
-#  SENTRY_POSTGRES_HOST
-#  SENTRY_POSTGRES_PORT
-#  SENTRY_DB_NAME
-#  SENTRY_DB_USER
-#  SENTRY_DB_PASSWORD
-#  SENTRY_RABBITMQ_HOST
-#  SENTRY_RABBITMQ_USERNAME
-#  SENTRY_RABBITMQ_PASSWORD
-#  SENTRY_RABBITMQ_VHOST
-#  SENTRY_REDIS_HOST
-#  SENTRY_REDIS_PASSWORD
-#  SENTRY_REDIS_PORT
-#  SENTRY_REDIS_DB
-#  SENTRY_MEMCACHED_HOST
-#  SENTRY_MEMCACHED_PORT
-#  SENTRY_FILESTORE_DIR
-#  SENTRY_SERVER_EMAIL
-#  SENTRY_EMAIL_HOST
-#  SENTRY_EMAIL_PORT
-#  SENTRY_EMAIL_USER
-#  SENTRY_EMAIL_PASSWORD
-#  SENTRY_EMAIL_USE_TLS
-#  SENTRY_ENABLE_EMAIL_REPLIES
-#  SENTRY_SMTP_HOSTNAME
-#  SENTRY_MAILGUN_API_KEY
-#  SENTRY_SINGLE_ORGANIZATION
-#  SENTRY_SECRET_KEY
-#  GITHUB_APP_ID
-#  GITHUB_API_SECRET
-#  BITBUCKET_CONSUMER_KEY
-#  BITBUCKET_CONSUMER_SECRET
+This file is just Python, with a touch of Django which means
+you can inherit and tweak settings to your hearts content.
+
+For Docker, the following environment variables are supported:
+ SENTRY_POSTGRES_HOST
+ SENTRY_POSTGRES_PORT
+ SENTRY_DB_NAME
+ SENTRY_DB_USER
+ SENTRY_DB_PASSWORD
+ SENTRY_RABBITMQ_HOST
+ SENTRY_RABBITMQ_USERNAME
+ SENTRY_RABBITMQ_PASSWORD
+ SENTRY_RABBITMQ_VHOST
+ SENTRY_REDIS_HOST
+ SENTRY_REDIS_PASSWORD
+ SENTRY_REDIS_PORT
+ SENTRY_REDIS_DB
+ SENTRY_MEMCACHED_HOST
+ SENTRY_MEMCACHED_PORT
+ SENTRY_FILESTORE_DIR
+ SENTRY_SERVER_EMAIL
+ SENTRY_EMAIL_HOST
+ SENTRY_EMAIL_PORT
+ SENTRY_EMAIL_USER
+ SENTRY_EMAIL_PASSWORD
+ SENTRY_EMAIL_USE_TLS
+ SENTRY_ENABLE_EMAIL_REPLIES
+ SENTRY_SMTP_HOSTNAME
+ SENTRY_MAILGUN_API_KEY
+ SENTRY_SINGLE_ORGANIZATION
+ SENTRY_SECRET_KEY
+ GITHUB_APP_ID
+ GITHUB_API_SECRET
+ BITBUCKET_CONSUMER_KEY
+ BITBUCKET_CONSUMER_SECRET
+
+"""
+
 from sentry.conf.server import *  # NOQA
-
+from urlparse import urlparse
 import os
-import os.path
 
 CONF_ROOT = os.path.dirname(__file__)
 
-postgres = env('SENTRY_POSTGRES_HOST') or (env('POSTGRES_PORT_5432_TCP_ADDR') and 'postgres')
-if postgres:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'sentry.db.postgres',
-            'NAME': (
-                env('SENTRY_DB_NAME')
-                or env('POSTGRES_ENV_POSTGRES_USER')
-                or 'postgres'
-            ),
-            'USER': (
-                env('SENTRY_DB_USER')
-                or env('POSTGRES_ENV_POSTGRES_USER')
-                or 'postgres'
-            ),
-            'PASSWORD': (
-                env('SENTRY_DB_PASSWORD')
-                or env('POSTGRES_ENV_POSTGRES_PASSWORD')
-                or ''
-            ),
-            'HOST': postgres,
-            'PORT': (
-                env('SENTRY_POSTGRES_PORT')
-                or ''
-            ),
-            'OPTIONS': {
-                'autocommit': True,
-            },
+postgres_url_parts = urlparse(env('DATABASE_URL'))
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'sentry.db.postgres',
+        'NAME': postgres_url_parts.path.strip('/'),
+        'USER': postgres_url_parts.username,
+        'PASSWORD': postgres_url_parts.password,
+        'HOST': postgres_url_parts.hostname,
+        'PORT': postgres_url_parts.port,
+        'OPTIONS': {
+            'autocommit': True,
         },
-    }
+    },
+}
 
 # You should not change this setting after your database has been created
 # unless you have altered all schemas first
@@ -94,23 +83,18 @@ SENTRY_FEATURES['auth:register'] = False
 # Generic Redis configuration used as defaults for various things including:
 # Buffers, Quotas, TSDB
 
-redis = env('SENTRY_REDIS_HOST') or (env('REDIS_PORT_6379_TCP_ADDR') and 'redis')
-if not redis:
-    raise Exception('Error: REDIS_PORT_6379_TCP_ADDR (or SENTRY_REDIS_HOST) is undefined, did you forget to `--link` a redis container?')
-
-redis_password = env('SENTRY_REDIS_PASSWORD') or ''
-redis_port = env('SENTRY_REDIS_PORT') or '6379'
-redis_db = env('SENTRY_REDIS_DB') or '0'
+REDIS_URL = env('REDIS_URL')
+redis_url_parts = urlparse(REDIS_URL)
 
 SENTRY_OPTIONS.update({
     'redis.clusters': {
         'default': {
             'hosts': {
                 0: {
-                    'host': redis,
-                    'password': redis_password,
-                    'port': redis_port,
-                    'db': redis_db,
+                    'host': redis_url_parts.hostname,
+                    'password': redis_url_parts.password,
+                    'port': redis_url_parts.port,
+                    'db': redis_url_parts.path.strip('/') or '0',
                 },
             },
         },
@@ -168,7 +152,7 @@ if rabbitmq:
         )
     )
 else:
-    BROKER_URL = 'redis://:' + redis_password + '@' + redis + ':' + redis_port + '/' + redis_db
+    BROKER_URL = REDIS_URL.replace('//sentry:', '//:') + '/0'
 
 
 ###############
@@ -226,7 +210,7 @@ SENTRY_DIGESTS = 'sentry.digests.backends.redis.RedisBackend'
 
 SENTRY_OPTIONS['filestore.backend'] = 'filesystem'
 SENTRY_OPTIONS['filestore.options'] = {
-    'location': env('SENTRY_FILESTORE_DIR'),
+    'location': env('SENTRY_FILESTORE_DIR', '/tmp/sentry-files'),
 }
 
 ##############
@@ -243,7 +227,7 @@ if env('SENTRY_USE_SSL', False):
     SOCIAL_AUTH_REDIRECT_IS_HTTPS = True
 
 SENTRY_WEB_HOST = '0.0.0.0'
-SENTRY_WEB_PORT = 9000
+SENTRY_WEB_PORT = 5000
 SENTRY_WEB_OPTIONS = {
     # 'workers': 3,  # the number of web workers
 }
@@ -253,32 +237,24 @@ SENTRY_WEB_OPTIONS = {
 ###############
 
 
-email = env('SENTRY_EMAIL_HOST') or (env('SMTP_PORT_25_TCP_ADDR') and 'smtp')
-if email:
-    SENTRY_OPTIONS['mail.backend'] = 'smtp'
-    SENTRY_OPTIONS['mail.host'] = email
-    SENTRY_OPTIONS['mail.password'] = env('SENTRY_EMAIL_PASSWORD') or ''
-    SENTRY_OPTIONS['mail.username'] = env('SENTRY_EMAIL_USER') or ''
-    SENTRY_OPTIONS['mail.port'] = int(env('SENTRY_EMAIL_PORT') or 25)
-    SENTRY_OPTIONS['mail.use-tls'] = env('SENTRY_EMAIL_USE_TLS', False)
-else:
-    SENTRY_OPTIONS['mail.backend'] = 'dummy'
+# email = env('SENTRY_EMAIL_HOST') or (env('SMTP_PORT_25_TCP_ADDR') and 'smtp')
+# if email:
+#     SENTRY_OPTIONS['mail.backend'] = 'smtp'
+#     SENTRY_OPTIONS['mail.host'] = email
+#     SENTRY_OPTIONS['mail.password'] = env('SENTRY_EMAIL_PASSWORD') or ''
+#     SENTRY_OPTIONS['mail.username'] = env('SENTRY_EMAIL_USER') or ''
+#     SENTRY_OPTIONS['mail.port'] = int(env('SENTRY_EMAIL_PORT') or 25)
+#     SENTRY_OPTIONS['mail.use-tls'] = env('SENTRY_EMAIL_USE_TLS', False)
+# else:
+#     SENTRY_OPTIONS['mail.backend'] = 'dummy'
+
+SENTRY_OPTIONS['mail.backend'] = 'sparkpost.django.email_backend.SparkPostEmailBackend'
+SPARKPOST_API_KEY = env('SPARKPOST_API_KEY')
+
 
 # The email address to send on behalf of
 SENTRY_OPTIONS['mail.from'] = env('SENTRY_SERVER_EMAIL') or 'root@localhost'
 
-# If you're using mailgun for inbound mail, set your API key and configure a
-# route to forward to /api/hooks/mailgun/inbound/
-SENTRY_OPTIONS['mail.mailgun-api-key'] = env('SENTRY_MAILGUN_API_KEY') or ''
-
-# If you specify a MAILGUN_API_KEY, you definitely want EMAIL_REPLIES
-if SENTRY_OPTIONS['mail.mailgun-api-key']:
-    SENTRY_OPTIONS['mail.enable-replies'] = True
-else:
-    SENTRY_OPTIONS['mail.enable-replies'] = env('SENTRY_ENABLE_EMAIL_REPLIES', False)
-
-if SENTRY_OPTIONS['mail.enable-replies']:
-    SENTRY_OPTIONS['mail.reply-hostname'] = env('SENTRY_SMTP_HOSTNAME') or ''
 
 # If this value ever becomes compromised, it's important to regenerate your
 # SENTRY_SECRET_KEY. Changing this value will result in all current sessions
@@ -298,12 +274,3 @@ if 'SENTRY_RUNNING_UWSGI' not in os.environ and len(secret_key) < 32:
 SENTRY_OPTIONS['system.secret-key'] = secret_key
 
 SENTRY_FEATURES['organizations:sso'] = True
-
-if 'GITHUB_APP_ID' in os.environ:
-    GITHUB_EXTENDED_PERMISSIONS = ['repo']
-    GITHUB_APP_ID = env('GITHUB_APP_ID')
-    GITHUB_API_SECRET = env('GITHUB_API_SECRET')
-
-if 'BITBUCKET_CONSUMER_KEY' in os.environ:
-    BITBUCKET_CONSUMER_KEY = env('BITBUCKET_CONSUMER_KEY')
-    BITBUCKET_CONSUMER_SECRET = env('BITBUCKET_CONSUMER_SECRET')

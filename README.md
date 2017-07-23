@@ -1,5 +1,17 @@
 # dokku-sentry
 
+
+Custom changes in this fork:
+ - Sentry 8.18,
+ - built-in webserver,
+ - `web`, `worker` and `cron` workers
+ - no plugins,
+ - SparkPost as the email backend.
+
+**CAUTION: THIS README HAS NOT BEEN UPDATED AND IS NOT CONSISTENT WITH THE CODE**
+
+-----
+
 Deploy [Sentry](https://github.com/getsentry/sentry) 8.14+ on [dokku](http://dokku.viewdocs.io/dokku/) with official [postgres](https://github.com/dokku/dokku-postgres) and [redis](https://github.com/dokku/dokku-redis) plugins.
 
 Instructions:
